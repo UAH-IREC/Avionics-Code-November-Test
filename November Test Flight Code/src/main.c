@@ -9,6 +9,8 @@ Write stuff here
 #define TARGET_LATITUDE 34.749428
 #define TARGET_LONGITUDE -86.655809
 
+#define FIXMATH_NO_CACHE 1
+
 #include <asf.h>
 #include <asf/common/utils/interrupt.h>
 #include <math.h>
@@ -25,6 +27,7 @@ Write stuff here
 #include "drivers/Altitude.h"
 #include "drivers/MS5607.h"
 #include "drivers/bno055.h"
+#include "libfixmatrix/fixquat.h"
 
 
 
@@ -191,20 +194,16 @@ struct bno055_t bno055;
 
 static void initialize()
 {
-	
-
-// 	while(1);
-	
 	board_init();
 	sysclk_init();
 	
 	sysclk_enable_peripheral_clock(&TCE0);
 	sysclk_enable_module(SYSCLK_PORT_E, SYSCLK_HIRES);
 	
-// 	time_ms = 0;
-// 	TCE0.CTRLA = 0b00000110;
-// 	TCE0.PER = 121;
-// 	TCE0.INTCTRLA = TC_OVFINTLVL_HI_gc;
+	time_ms = 0;
+	TCE0.CTRLA = 0b00000110;
+	TCE0.PER = 121;
+	TCE0.INTCTRLA = TC_OVFINTLVL_HI_gc;
 	
 
 	wdt_set_timeout_period(WDT_TIMEOUT_PERIOD_1KCLK);
@@ -323,6 +322,17 @@ int main (void)
 
 	//printf("init pressure: %li   1st real pressure: %li\n",initPressure, pressure);
 	printf("Cycles,State,Altitude,Heading,Yaw,Pitch,Roll,ServoEnable,CommandedYaw,CommandedPitch,CurrentLat,CurrentLon,TargetHeading\n");
+	v3d position;
+	position.x = 0;
+	position.y = 0;
+	position.z = 0;
+	v3d velocity;
+	velocity.x = 0;
+	velocity.y = 0;
+	velocity.z = 0;
+	v3d acceleration;
+	
+	qf16 orientation;
 
 	while(true)
 	{
@@ -375,9 +385,22 @@ int main (void)
 			{
 				struct bno055_linear_accel_t bno055_linear_accel; 
 				bno055_read_linear_accel_xyz(&bno055_linear_accel);
+				acceleration.x = bno055_linear_accel.x / 1000.0;
+				acceleration.y = bno055_linear_accel.y / 1000.0;
+				acceleration.z = bno055_linear_accel.z / 1000.0;
 
 				struct bno055_quaternion_t bno055_quaternion;
 				bno055_read_quaternion_wxyz(&bno055_quaternion);
+				orientation.a = bno055_quaternion.w;
+				orientation.b = bno055_quaternion.x;
+				orientation.c = bno055_quaternion.y;
+				orientation.d = bno055_quaternion.z;
+				qf16_normalize(&orientation, &orientation);
+				qf16_conj(&orientation, &orientation); //Inverts quaternion (inverse of unit quaternion is the conjugate)
+				
+				v3d globalaccel;
+				qf16_rotate(&globalaccel, &orientation, &acceleration);
+				//Todo: integrate and such
 
 				printf("%i, %i, %i, %i, %i, %i, %i\n",bno055_quaternion.w, bno055_quaternion.x, bno055_quaternion.y, bno055_quaternion.z, bno055_linear_accel.x, bno055_linear_accel.y, bno055_linear_accel.z);
 				

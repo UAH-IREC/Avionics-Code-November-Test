@@ -39,10 +39,12 @@ static const fix16_t fix16_pi  = 205887;     /*!< fix16_t value of pi */
 static const fix16_t fix16_e   = 178145;     /*!< fix16_t value of e */
 static const fix16_t fix16_one = 0x00010000; /*!< fix16_t value of 1 */
 
+#define FIXMATH_NO_ROUNDING
+
 /* Conversion functions between fix16_t and float/integer.
  * These are inlined to allow compiler to optimize away constant numbers
  */
-static inline fix16_t fix16_from_int(int a)     { return a * fix16_one; }
+static inline fix16_t fix16_from_int(int32_t a)     { return a * fix16_one; }
 static inline float   fix16_to_float(fix16_t a) { return (float)a / fix16_one; }
 static inline double  fix16_to_dbl(fix16_t a)   { return (double)a / fix16_one; }
 

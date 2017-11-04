@@ -200,10 +200,7 @@ static void initialize()
 	sysclk_enable_peripheral_clock(&TCE0);
 	sysclk_enable_module(SYSCLK_PORT_E, SYSCLK_HIRES);
 	
-	time_ms = 0;
-	TCE0.CTRLA = 0b00000110;
-	TCE0.PER = 121;
-	TCE0.INTCTRLA = TC_OVFINTLVL_HI_gc;
+
 	
 
 	wdt_set_timeout_period(WDT_TIMEOUT_PERIOD_1KCLK);
@@ -219,8 +216,13 @@ static void initialize()
 	pmic_init();
 	irq_initialize_vectors();
 	cpu_irq_enable();
-
+	
 	printf("PMIC Initialized\n");
+	
+	time_ms = 0;
+	TCE0.CTRLA = 0b00000110;
+	TCE0.PER = 121;
+	TCE0.INTCTRLA = TC_OVFINTLVL_HI_gc;
 
 	wdt_reset();
 
@@ -291,6 +293,8 @@ int main (void)
 	delay_ms(10); //This has to be here, I don't know why.
 
 	wdt_reset();
+	
+	uint32_t last_time = 0;
 
 
 
@@ -381,28 +385,41 @@ int main (void)
 
 				
 			
-			if(cycles%5 == 0)
+			if(cycles % 5 == 0)
 			{
 				struct bno055_linear_accel_t bno055_linear_accel; 
 				bno055_read_linear_accel_xyz(&bno055_linear_accel);
-				acceleration.x = bno055_linear_accel.x / 1000.0;
-				acceleration.y = bno055_linear_accel.y / 1000.0;
-				acceleration.z = bno055_linear_accel.z / 1000.0;
+				acceleration.x = fix16_from_float((float)bno055_linear_accel.x / 1000.0);
+				acceleration.y = fix16_from_float((float)bno055_linear_accel.y / 1000.0);
+				acceleration.z = fix16_from_float((float)bno055_linear_accel.z / 1000.0);
 
 				struct bno055_quaternion_t bno055_quaternion;
 				bno055_read_quaternion_wxyz(&bno055_quaternion);
-				orientation.a = bno055_quaternion.w;
-				orientation.b = bno055_quaternion.x;
-				orientation.c = bno055_quaternion.y;
-				orientation.d = bno055_quaternion.z;
+				orientation.a = fix16_from_int(bno055_quaternion.w);
+				orientation.b = fix16_from_int(bno055_quaternion.x);
+				orientation.c = fix16_from_int(bno055_quaternion.y);
+				orientation.d = fix16_from_int(bno055_quaternion.z);
+
 				qf16_normalize(&orientation, &orientation);
 				qf16_conj(&orientation, &orientation); //Inverts quaternion (inverse of unit quaternion is the conjugate)
-				
+
 				v3d globalaccel;
 				qf16_rotate(&globalaccel, &orientation, &acceleration);
-				//Todo: integrate and such
+				uint32_t this_time = time_ms;
+				if (last_time != 0)
+				{
+					v3d dv, dp, tmp;
+					v3d_mul_s(&dv, &globalaccel, fix16_from_float((float)(this_time - last_time) / 1000.0));
+					v3d_add(&velocity, &velocity, &dv);
+					v3d_mul_s(&dp, &velocity, fix16_from_float((float)(this_time - last_time) / 1000.0));
+					v3d_add(&position, &position, &dp);
+				}
+				last_time = this_time;
 
-				printf("%i, %i, %i, %i, %i, %i, %i\n",bno055_quaternion.w, bno055_quaternion.x, bno055_quaternion.y, bno055_quaternion.z, bno055_linear_accel.x, bno055_linear_accel.y, bno055_linear_accel.z);
+				v3d pos_cm;
+				v3d_mul_s(&pos_cm, &position, F16(100));
+				printf("%li, %i, %i, %i, %i, %i, %i, %i, %i, %i, %i\n", time_ms, fix16_to_int(pos_cm.x), fix16_to_int(pos_cm.y), fix16_to_int(pos_cm.z),
+						bno055_quaternion.w, bno055_quaternion.x, bno055_quaternion.y, bno055_quaternion.z, bno055_linear_accel.x, bno055_linear_accel.y, bno055_linear_accel.z);
 				
 				if(bno055_quaternion.w == 0 && bno055_quaternion.x == 0 && bno055_quaternion.y == 0 && bno055_quaternion.z == 0 && bno055_linear_accel.x == 0 && bno055_linear_accel.y == 0 && bno055_linear_accel.z == 0)
 				{

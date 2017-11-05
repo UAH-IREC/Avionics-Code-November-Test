@@ -6,6 +6,7 @@ accel_mean = 1.2; % m/s^2
 tstep = 1;
 times = 0:tstep:200;
 accel = accel_mean * ones([length(times), 1]) + sigma_accel * randn([length(times), 1]);
+accel(1:50) = sigma_accel * randn([50, 1]);
 velocities = zeros([length(times), 1]);
 altitudes = zeros([length(times), 1]);
 
@@ -19,7 +20,7 @@ sigma_vel = 50.0; % m
 sigma_accel = 3.0; % m/s
 
 vel_measurements = velocities + sigma_vel * randn([length(velocities), 1]);
-accel_measurements = accel + sigma_accel * randn([length(velocities), 1]) + 0.01;
+accel_measurements = accel + sigma_accel * randn([length(velocities), 1]);
 alt_predictions = zeros([length(times), 2]);
 vel_predictions = zeros([length(times), 1]);
 
@@ -57,6 +58,7 @@ end
 
 figure()
 plot(times, altitudes, 'r+', times, alt_predictions(:, 1), 'b+', times, alt_predictions(:, 2), 'yo');
+legend('True altitudes', 'Kalman altitude predictions', 'Raw integrated altitude');
 
 figure()
 plot(times, altitudes - alt_predictions(:, 1), times, altitudes - alt_predictions(:, 2));

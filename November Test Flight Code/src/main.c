@@ -29,8 +29,6 @@ Write stuff here
 #include "drivers/bno055.h"
 #include "libfixmatrix/fixquat.h"
 
-
-
 static void initialize(void);
 
 bool ready = true; // Change this back to false
@@ -60,6 +58,9 @@ MS5607_t MS5607 =
 {
 	.select_pin = IOPORT_CREATE_PIN(PORTC,4)
 };
+
+mf16 Pk, Hk, Rk;
+fix16_t sigma_pitot_measurements, sigma_accel_measurements;
 
 #define	I2C_BUFFER_LEN 8
 #define I2C0 5
@@ -199,14 +200,10 @@ static void initialize()
 	
 	sysclk_enable_peripheral_clock(&TCE0);
 	sysclk_enable_module(SYSCLK_PORT_E, SYSCLK_HIRES);
-	
-
-	
 
 	wdt_set_timeout_period(WDT_TIMEOUT_PERIOD_1KCLK);
 	//wdt_enable();
-
-
+	
 	sysclk_enable_peripheral_clock(&USARTC0);
 	UART_Comms_Init();
 	printf("\nRESTART!\n");
@@ -268,6 +265,18 @@ static void initialize()
 
 	printf("\nInitialization Complete!\n\n\n");
 	
+	//Setup Kalman matrices
+	sigma_pitot_measurements = F16(1.0); //This is actually a function of velocity I guess, we should fix that at some point
+	sigma_accel_measurements = F16(1.0);
+	
+	Pk.rows = 2; Pk.columns = 2;
+	Hk = Pk; //Set row and column values
+	mf16_fill_diagonal(&Hk, F16(1));
+	Rk = Hk;
+	mf16_fill(&Pk, F16(0));
+	Pk.data[0][0] = fix16_sq(sigma_pitot_measurements);
+	Pk.data[1][1] = fix16_sq(sigma_accel_measurements);
+	
 	delay_ms(3000);
 
 	// calibrate (REMOVE FOR FLIGHT)
@@ -284,6 +293,95 @@ static void update_sensors()
 
 }
 
+typedef struct  
+{
+	//All values in earth frame
+	v3d pos; // m
+	v3d vel; // m/s
+	fix16_t accel; // m/s^2 
+	qf16 orientation; //Quaternion from rocket body frame to earth frame
+} state_t;
+
+state_t update_kalman_state(const state_t* last_state, v3d accel, v3d vel, qf16 orientation, fix16_t tstep)
+{
+	//Acceleration and velocity should both be in the rocket body frame already
+	//Orientation should be the new vector from the rocket body frame to the earth frame
+	//Only filtering the measurements along the rocket's axis, then transforming those into the global frame and integrating them for a new position
+	
+	//Get reverse quaternion
+	qf16_normalize(&orientation, &orientation);
+	qf16 earth_to_body;
+	qf16_conj(&earth_to_body, &orientation);
+	
+	//Miscellaneous useful quantities
+	//Last velocity and acceleration in the body frame
+	v3d last_vel, last_accel;
+	qf16_rotate(&last_accel, &earth_to_body, &(last_state->accel));
+	qf16_rotate(&last_vel, &earth_to_body, &(last_state->vel));
+	
+	//Prediction step
+	mf16 Fk;
+	Fk.columns = 2; Fk.rows = 2;
+	Fk.data[0][0] = F16(1);
+	Fk.data[0][1] = tstep;
+	Fk.data[1][0] = F16(0);
+	Fk.data[1][1] = F16(1);
+	
+	mf16 xk;
+	xk.columns = 1; xk.rows = 2;
+	xk.data[0][0] = last_vel.x;
+	xk.data[1][0] = last_accel.x;
+	mf16 xkhat;
+	xkhat.columns = 1; xkhat.rows = 2;
+	mf16_mul(&xkhat, &Fk, &xk);
+	
+	mf16 Qk;
+	Qk.rows = 2; Qk.columns = 2;
+	Qk.data[0][0] = F16(1);
+	Qk.data[0][1] = F16(0);
+	Qk.data[1][0] = F16(0);
+	Qk.data[1][1] = F16(0.1);
+	
+	mf16_mul(&Pk, &Fk, &Pk);
+	mf16_mul_bt(&Pk, &Pk, &Fk);
+	mf16_add(&Pk, &Pk, &Qk);
+	
+	//Update step
+	mf16 K, zk; //Kalman gain and measurements
+	K.rows = 2; K.columns = 2;
+	zk.rows = 2; zk.columns = 1;
+	zk.data[0][0] = vel.x;
+	zk.data[1][0] = accel.x;
+	
+	//Compute the Kalman gain
+	mf16_mul(&K, &Hk, &Pk);
+	mf16_mul_bt(&K, &K, &Hk);
+	mf16_add(&K, &K, &Rk);
+	
+	//Invert K somehow
+	//TODO FIXME XXX THIS WON'T WORK find a nice efficient inversion approach and invert K here. Or get around this somehow
+	//After inverting
+	mf16 temp;
+	temp.rows = 2; temp.columns = 2;
+	mf16_mul_bt(&temp, &Pk, &Hk);
+	mf16_mul(&K, &temp, &K);
+	
+	//Updated state
+	mf16_mul(&temp, &Hk, &xkhat);
+	mf16_sub(&temp, &zk, &temp);
+	mf16_mul(&temp, &K, &temp);
+	mf16_add(&xk, &xkhat, &temp);
+	
+	//Update Pk
+	mf16_mul(&temp, &K, &Hk);
+	mf16_mul(&temp, &temp, &Pk);
+	mf16_sub(&Pk, &Pk, &temp);
+	
+	//Integrate
+	fix16_t filtered_vel = xk.data[0][0];
+	fix16_t filtered_accel = xk.data[1][0];
+	//TODO: finish integrating and such
+}
 
 int main (void)
 {
@@ -385,7 +483,7 @@ int main (void)
 
 				
 			
-			if(cycles % 5 == 0)
+			if(cycles % 4 == 0)
 			{
 				struct bno055_linear_accel_t bno055_linear_accel; 
 				bno055_read_linear_accel_xyz(&bno055_linear_accel);

@@ -347,6 +347,12 @@
     <Folder Include="src\tools" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="src\drivers\apbmand.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="src\drivers\apbmand.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="src\drivers\bno055.c">
       <SubType>compile</SubType>
     </Compile>

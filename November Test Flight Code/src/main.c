@@ -389,9 +389,9 @@ int main (void)
 			{
 				struct bno055_linear_accel_t bno055_linear_accel; 
 				bno055_read_linear_accel_xyz(&bno055_linear_accel);
-				acceleration.x = fix16_from_float((float)bno055_linear_accel.x / 1000.0);
-				acceleration.y = fix16_from_float((float)bno055_linear_accel.y / 1000.0);
-				acceleration.z = fix16_from_float((float)bno055_linear_accel.z / 1000.0);
+				acceleration.x = fix16_from_float((float)bno055_linear_accel.x / 100.0);
+				acceleration.y = fix16_from_float((float)bno055_linear_accel.y / 100.0);
+				acceleration.z = fix16_from_float((float)bno055_linear_accel.z / 100.0);
 
 				struct bno055_quaternion_t bno055_quaternion;
 				bno055_read_quaternion_wxyz(&bno055_quaternion);
@@ -400,27 +400,7 @@ int main (void)
 				orientation.c = fix16_from_int(bno055_quaternion.y);
 				orientation.d = fix16_from_int(bno055_quaternion.z);
 
-				qf16_normalize(&orientation, &orientation);
-				qf16_conj(&orientation, &orientation); //Inverts quaternion (inverse of unit quaternion is the conjugate)
-
-				v3d globalaccel;
-				qf16_rotate(&globalaccel, &orientation, &acceleration);
-				uint32_t this_time = time_ms;
-				if (last_time != 0)
-				{
-					v3d dv, dp, tmp;
-					v3d_mul_s(&dv, &globalaccel, fix16_from_float((float)(this_time - last_time) / 1000.0));
-					v3d_add(&velocity, &velocity, &dv);
-					v3d_mul_s(&dp, &velocity, fix16_from_float((float)(this_time - last_time) / 1000.0));
-					v3d_add(&position, &position, &dp);
-				}
-				last_time = this_time;
-
-				v3d pos_cm;
-				v3d_mul_s(&pos_cm, &position, F16(100));
-				printf("%li, %i, %i, %i, %i, %i, %i, %i, %i, %i, %i\n", time_ms, fix16_to_int(pos_cm.x), fix16_to_int(pos_cm.y), fix16_to_int(pos_cm.z),
-						bno055_quaternion.w, bno055_quaternion.x, bno055_quaternion.y, bno055_quaternion.z, bno055_linear_accel.x, bno055_linear_accel.y, bno055_linear_accel.z);
-				
+								
 				if(bno055_quaternion.w == 0 && bno055_quaternion.x == 0 && bno055_quaternion.y == 0 && bno055_quaternion.z == 0 && bno055_linear_accel.x == 0 && bno055_linear_accel.y == 0 && bno055_linear_accel.z == 0)
 				{
 					int8_t initStatus = bno055_init(&bno055);
@@ -436,22 +416,50 @@ int main (void)
 					delay_ms(500);
 				}
 				
-// 				uint8_t accel_calib = 0;
-// 				uint8_t gyro_calib = 0;
-// 				uint8_t mag_calib = 0;
-// 				uint8_t sys_calib = 0;
-// 				bno055_get_accel_calib_stat(&accel_calib);
-// 				bno055_get_gyro_calib_stat(&gyro_calib);
-// 				bno055_get_mag_calib_stat(&mag_calib);
-// 				bno055_get_sys_calib_stat(&sys_calib);
+				uint8_t accel_calib = 0;
+				uint8_t gyro_calib = 0;
+				uint8_t mag_calib = 0;
+				uint8_t sys_calib = 0;
+				bno055_get_accel_calib_stat(&accel_calib);
+				bno055_get_gyro_calib_stat(&gyro_calib);
+				bno055_get_mag_calib_stat(&mag_calib);
+				bno055_get_sys_calib_stat(&sys_calib);
+				
+				if (accel_calib > 1 && gyro_calib > 1 && mag_calib > 1 && sys_calib > 1)
+				{
+					qf16_normalize(&orientation, &orientation);
+					qf16_conj(&orientation, &orientation); //Inverts quaternion (inverse of unit quaternion is the conjugate)
 
-				//printf("Calib stat: %u %u %u %u\n",accel_calib, gyro_calib, mag_calib, sys_calib);
+					v3d globalaccel;
+					qf16_rotate(&globalaccel, &orientation, &acceleration);
+					uint32_t this_time = time_ms;
+					if (last_time != 0)
+					{
+						v3d dv, dp, tmp;
+						v3d_mul_s(&dv, &globalaccel, fix16_from_float((float)(this_time - last_time) / 1000.0));
+						v3d_add(&velocity, &velocity, &dv);
+						v3d_mul_s(&dp, &velocity, fix16_from_float((float)(this_time - last_time) / 1000.0));
+						v3d_add(&position, &position, &dp);
+					}
+					last_time = this_time;
+
+					v3d pos_cm;
+					v3d_mul_s(&pos_cm, &position, F16(100));
+					printf("%li, %i, %i, %i, %i, %i, %i, %i, %i, %i, %i\n", time_ms, fix16_to_int(pos_cm.x), fix16_to_int(pos_cm.y), fix16_to_int(pos_cm.z),
+					bno055_quaternion.w, bno055_quaternion.x, bno055_quaternion.y, bno055_quaternion.z, bno055_linear_accel.x, bno055_linear_accel.y, bno055_linear_accel.z);
+				}
+				else
+				{
+					printf("Calib stat: %u %u %u %u\n",accel_calib, gyro_calib, mag_calib, sys_calib);
+				}	
+				
 // 				printf("%lu,",cycles);
 // 				printf("%li,%lu,%lu,",pressure,temperature);
 // 				//printf("%.3f,%.3f,%.3f,%.3f,",yaw_to_heading(imu_data.yaw),imu_data.yaw,imu_data.roll,imu_data.pitch);
 // 				//printf("%.3f,%i,",yawAngle,pitchAngle);
 // 				printf("%.5f,%.5f,",GPSdata.latdecimal,GPSdata.londecimal);
 			}
+			
 			
 			//HEADING IS (imu_data.yaw+180.0)
 			//DANIEL PUT CODE HERE

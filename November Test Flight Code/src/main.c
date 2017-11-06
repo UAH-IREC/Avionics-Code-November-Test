@@ -302,6 +302,12 @@ typedef struct
 	qf16 orientation; //Quaternion from rocket body frame to earth frame
 } state_t;
 
+fix16_t det_2x2(mf16* matrix)
+{
+	return fix16_sub(fix16_mul(matrix->data[0][0], matrix->data[1][1]), fix16_mul(matrix->data[0][1], matrix->data[1][0]));
+}
+
+
 state_t update_kalman_state(const state_t* last_state, v3d accel, v3d vel, qf16 orientation, fix16_t tstep)
 {
 	//Acceleration and velocity should both be in the rocket body frame already

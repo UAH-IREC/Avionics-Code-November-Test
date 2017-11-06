@@ -483,7 +483,7 @@ int main (void)
 
 				
 			
-			if(cycles % 4 == 0)
+			if(cycles % 3 == 0)
 			{
 				struct bno055_linear_accel_t bno055_linear_accel; 
 				bno055_read_linear_accel_xyz(&bno055_linear_accel);

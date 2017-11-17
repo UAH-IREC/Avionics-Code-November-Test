@@ -62,7 +62,7 @@ MS5607_t MS5607 =
 
 apbmand_t apbmand = 
 {
-	.twi = TWID
+	.twi = &TWID
 };
 
 mf16 Pk, Hk, Rk;
@@ -501,8 +501,36 @@ int main (void)
 			
 			if(cycles % 3 == 0)
 			{
-				struct bno055_linear_accel_t bno055_linear_accel; 
+				/*
+				IMU Data:
+					- Raw acceleration
+					- Raw gyroscope
+					- Raw magnetometer
+					- Linear (no gravity vector) acceleration
+					- Gravity vector
+					- Quaternion
+					
+				Pressure sensor:
+					- Pressure
+					
+				Calculated values:
+					- Airspeed
+					- World acceleration
+					- World velocity
+					- World position
+				*/
+				struct bno055_linear_accel_t bno055_linear_accel;
 				bno055_read_linear_accel_xyz(&bno055_linear_accel);
+				
+				struct bno055_accel_t raw_accel;
+				bno055_read_accel_xyz(&raw_accel);
+				
+				struct bno055_gyro_t raw_gyro;
+				bno055_read_gyro_xyz(&raw_gyro);
+				
+				struct bno055_mag_t raw_mag;
+				bno055_read_mag_xyz(&raw_mag);
+				
 				acceleration.x = fix16_from_float((float)bno055_linear_accel.x / 100.0);
 				acceleration.y = fix16_from_float((float)bno055_linear_accel.y / 100.0);
 				acceleration.z = fix16_from_float((float)bno055_linear_accel.z / 100.0);
@@ -513,7 +541,6 @@ int main (void)
 				orientation.b = fix16_from_int(bno055_quaternion.x);
 				orientation.c = fix16_from_int(bno055_quaternion.y);
 				orientation.d = fix16_from_int(bno055_quaternion.z);
-
 								
 				if(bno055_quaternion.w == 0 && bno055_quaternion.x == 0 && bno055_quaternion.y == 0 && bno055_quaternion.z == 0 && bno055_linear_accel.x == 0 && bno055_linear_accel.y == 0 && bno055_linear_accel.z == 0)
 				{
@@ -539,33 +566,59 @@ int main (void)
 				bno055_get_mag_calib_stat(&mag_calib);
 				bno055_get_sys_calib_stat(&sys_calib);
 				
-				if (accel_calib > 1 && gyro_calib > 1 && mag_calib > 1 && sys_calib > 1)
+// 				if (accel_calib > 1 && gyro_calib > 1 && mag_calib > 1 && sys_calib > 1)
+// 				{
+				qf16_normalize(&orientation, &orientation);
+				qf16_conj(&orientation, &orientation); //Inverts quaternion (inverse of unit quaternion is the conjugate)
+
+				v3d globalaccel;
+				qf16_rotate(&globalaccel, &orientation, &acceleration);
+				uint32_t this_time = time_ms;
+				if (last_time != 0)
 				{
-					qf16_normalize(&orientation, &orientation);
-					qf16_conj(&orientation, &orientation); //Inverts quaternion (inverse of unit quaternion is the conjugate)
+					v3d dv, dp, tmp;
+					v3d_mul_s(&dv, &globalaccel, fix16_from_float((float)(this_time - last_time) / 1000.0));
+					v3d_add(&velocity, &velocity, &dv);
+					v3d_mul_s(&dp, &velocity, fix16_from_float((float)(this_time - last_time) / 1000.0));
+					v3d_add(&position, &position, &dp);
+				}
+				last_time = this_time;
 
-					v3d globalaccel;
-					qf16_rotate(&globalaccel, &orientation, &acceleration);
-					uint32_t this_time = time_ms;
-					if (last_time != 0)
-					{
-						v3d dv, dp, tmp;
-						v3d_mul_s(&dv, &globalaccel, fix16_from_float((float)(this_time - last_time) / 1000.0));
-						v3d_add(&velocity, &velocity, &dv);
-						v3d_mul_s(&dp, &velocity, fix16_from_float((float)(this_time - last_time) / 1000.0));
-						v3d_add(&position, &position, &dp);
-					}
-					last_time = this_time;
-
-					v3d pos_cm;
-					v3d_mul_s(&pos_cm, &position, F16(100));
-					printf("%li, %i, %i, %i, %i, %i, %i, %i, %i, %i, %i\n", time_ms, fix16_to_int(pos_cm.x), fix16_to_int(pos_cm.y), fix16_to_int(pos_cm.z),
-					bno055_quaternion.w, bno055_quaternion.x, bno055_quaternion.y, bno055_quaternion.z, bno055_linear_accel.x, bno055_linear_accel.y, bno055_linear_accel.z);
+				v3d pos_cm;
+				v3d_mul_s(&pos_cm, &position, F16(100));
+				printf("%li, "		//Time
+						"%i, %i, %i, "		//Position
+						"%i, %i, %i, %i, "	//Quaternion
+						"%i, %i, %i, "		//Linear acceleration
+						"%i, %i, %i, "		//Raw acceleration
+						"%i, %i, %i, "		//Raw gyroscope
+						"%i, %i, %i, "		//Raw magnetometer
+						"%u, %u, %u, %u, "	//Calibration statuses
+						"MS5607: %li, %li, %li"		//Pressure, temperature, altitude
+						"\n", 
+					time_ms, 
+					fix16_to_int(pos_cm.x), fix16_to_int(pos_cm.y), fix16_to_int(pos_cm.z),
+					bno055_quaternion.w, bno055_quaternion.x, bno055_quaternion.y, bno055_quaternion.z,
+					bno055_linear_accel.x, bno055_linear_accel.y, bno055_linear_accel.z,
+					raw_accel.x, raw_accel.y, raw_accel.z,
+					raw_gyro.x, raw_gyro.y, raw_gyro.z,
+					raw_mag.x, raw_mag.y, raw_mag.z,
+					accel_calib, gyro_calib, mag_calib, sys_calib,
+					pressure, temperature, altitude
+					);
+/*				}*/
+				if (accel_calib < 1 || gyro_calib < 1 || mag_calib < 1 || sys_calib < 1)
+				{
+					PORTE.OUTTGL = 0xff;
 				}
 				else
 				{
-					printf("Calib stat: %u %u %u %u\n",accel_calib, gyro_calib, mag_calib, sys_calib);
-				}	
+					PORTE.OUT = 0xf0;
+				}
+// 				else
+// 				{
+// 					printf("Calib stat: %u %u %u %u\n",accel_calib, gyro_calib, mag_calib, sys_calib);
+// 				}	
 				
 // 				printf("%lu,",cycles);
 // 				printf("%li,%lu,%lu,",pressure,temperature);

@@ -27,6 +27,7 @@ Write stuff here
 #include "drivers/Altitude.h"
 #include "drivers/MS5607.h"
 #include "drivers/bno055.h"
+#include "drivers/apbmand.h"
 #include "libfixmatrix/fixquat.h"
 
 static void initialize(void);
@@ -57,6 +58,11 @@ ISR(TCE0_OVF_vect) //The actual interrupt handling function
 MS5607_t MS5607 =
 {
 	.select_pin = IOPORT_CREATE_PIN(PORTC,4)
+};
+
+apbmand_t apbmand = 
+{
+	.twi = TWID
 };
 
 mf16 Pk, Hk, Rk;
@@ -256,6 +262,10 @@ static void initialize()
 	
 	printf("IMU Initialized\n");
 
+	apbmand_data_t apbmand_data = read_apbmand(apbmand);
+	printf("%i",(int16_t)(apbmand_data.airspeed));
+
+	printf("Differential Pressure Sensor Initialized\n");
 
 	sysclk_enable_peripheral_clock(&SPIC);
 	initializespi(&SPIC,&PORTC);

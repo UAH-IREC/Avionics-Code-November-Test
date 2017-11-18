@@ -45,8 +45,8 @@
 #include <inttypes.h>
 #include <asf.h>
 
-uint32_t rawPressure = 0;
-uint32_t rawTemp = 0;
+int32_t rawPressure = 0;
+int32_t rawTemp = 0;
 
 void pressureSensorReset(MS5607_t* sensor);
 uint16_t read16(SPI_t* targetspi);
@@ -143,7 +143,7 @@ void readRawPressureMS5607(MS5607_t* sensor)
 	spiselect(sensor->select_pin);
 	spiwrite(&PRESSURE_SENSOR_SPI, 0x0);
 	rawPressure = read24(&PRESSURE_SENSOR_SPI);
-	printf("rawPressure is %" PRIi32 "\n", rawPressure);
+/*	printf("rawPressure is %" PRIi32 "\n", rawPressure);*/
 	spideselect(sensor->select_pin);
 }
 
@@ -161,7 +161,7 @@ void readRawTemperatureMS5607(MS5607_t* sensor)
 	spiselect(sensor->select_pin);
 	spiwrite(&PRESSURE_SENSOR_SPI, 0x0);
 	rawTemp = read24(&PRESSURE_SENSOR_SPI);
-	printf("rawTemp is %" PRIi32 "\n", rawTemp);
+/*	printf("rawTemp is %" PRIi32 "\n", rawTemp);*/
 	spideselect(sensor->select_pin);
 }
 
@@ -207,16 +207,16 @@ void calculateValuesMS5607(MS5607_t* sensor, int32_t* pressure_dest, int32_t* te
 	int64_t PRESSURE = (((int64_t)rawPressure) * SENS / ((int64_t)2097152) - OFF) 
 			/ ((int64_t)32768);
 			
-	printf("C1: %u\nC2: %u\nC3: %u\nC4: %u\nC5: %u\nC6: %u\n", 
-	sensor->SENSt1,
-	sensor->OFFt1,
-	sensor->TCS,
-	sensor->TCO,
-	sensor->Tref,
-	sensor->TEMPSENS);
+// 	printf("C1: %u\nC2: %u\nC3: %u\nC4: %u\nC5: %u\nC6: %u\n", 
+// 	sensor->SENSt1,
+// 	sensor->OFFt1,
+// 	sensor->TCS,
+// 	sensor->TCO,
+// 	sensor->Tref,
+// 	sensor->TEMPSENS);
 				
-	printf("TEMP: %" PRIi32 "\n", TEMP);
-	printf("Pressure: %" PRIi32 "\n", (int32_t)PRESSURE);
+// 	printf("TEMP: %" PRIi32 "\n", TEMP);
+// 	printf("Pressure: %" PRIi32 "\n", (int32_t)PRESSURE);
 	
 	*pressure_dest = (int32_t) PRESSURE; //In pascals
 	*temperature_dest = TEMP; //In hundredths of degree celsius

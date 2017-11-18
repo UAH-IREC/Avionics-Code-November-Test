@@ -248,7 +248,7 @@ static void initialize()
 	bno055.bus_write = BNO055_I2C_bus_write;
 	bno055.bus_read = BNO055_I2C_bus_read;
 	bno055.delay_msec = BNO055_delay_msek;
-	bno055.dev_addr = BNO055_I2C_ADDR1;
+	bno055.dev_addr = BNO055_I2C_ADDR2;
 
 	
 	int8_t initStatus = bno055_init(&bno055);
@@ -258,7 +258,7 @@ static void initialize()
 	int8_t status = bno055_set_operation_mode(BNO055_OPERATION_MODE_NDOF);
 	uint8_t operation_mode = 0;
 	bno055_get_operation_mode(&operation_mode);
-	printf("Operation mode is %u, should be %u\nWrite status: %i  (0 is good)\n",operation_mode,BNO055_OPERATION_MODE_NDOF,status);
+	printf("Operation mode is %u, should be %u\nWrite status: %i  (0 is good)\n",operation_mode,BNO055_OPERATION_MODE_NDOF,status);\
 	
 	printf("IMU Initialized\n");
 
@@ -270,7 +270,7 @@ static void initialize()
 	sysclk_enable_peripheral_clock(&SPIC);
 	initializespi(&SPIC,&PORTC);
 	calibratePressureSensor(&MS5607);
-
+	
 	printf("MS5607 Initialized\n");
 
 	printf("\nInitialization Complete!\n\n\n");
@@ -399,6 +399,8 @@ state_t update_kalman_state(const state_t* last_state, v3d accel, v3d vel, qf16 
 	//TODO: finish integrating and such
 }
 
+uint32_t hrms_to_sec(uint8_t hours, uint8_t minutes, uint8_t seconds);
+
 int main (void)
 {
 	initialize();
@@ -452,6 +454,16 @@ int main (void)
 	
 	qf16 orientation;
 
+	MS5607.STATE = MS_SENS_STATE_READY;
+	uint32_t last_ms_action_time = 0;
+	
+	apbmand_data_t apbmand_data;
+	float nedx, nedy, nedz;
+	
+	uint16_t last_toggle_time = 0;
+	
+	uint8_t has_launched = 0;
+	uint8_t high_accel_counter = 0;
 	while(true)
 	{
 		//sleepmgr_sleep(SLEEPMGR_STDBY);
@@ -463,20 +475,26 @@ int main (void)
 
 			update_sensors();
 
-			if(cycles%10 == 0)
+			if(MS5607.STATE == MS_SENS_STATE_READY)
 			{
 				askForPressureMS5607(&MS5607);
+				MS5607.STATE = MS_SENS_STATE_ASKING_PRESS;
+				last_ms_action_time = time_ms;
 			}
-			if (cycles%10 == 2)
+			if (MS5607.STATE == MS_SENS_STATE_ASKING_PRESS && time_ms - last_ms_action_time >= MS_SENS_LENGTH_VALUE_READ)
 			{
 				readRawPressureMS5607(&MS5607);
 				askForTemperatureMS5607(&MS5607);
+				MS5607.STATE = MS_SENS_STATE_ASKING_TEMP;
+				last_ms_action_time = time_ms;
 			}
-			if(cycles%10 == 4)
+			if(MS5607.STATE == MS_SENS_STATE_ASKING_TEMP && time_ms - last_ms_action_time >= MS_SENS_LENGTH_VALUE_READ)
 			{
 				readRawTemperatureMS5607(&MS5607);
 				calculateValuesMS5607(&MS5607, &pressure, &temperature);
 				altitude = Measure_altitude(initPressure,pressure)/100;
+				
+				MS5607.STATE = MS_SENS_STATE_READY;
 				
 // 				if(cycles/30 < 220)
 // 				{
@@ -496,136 +514,151 @@ int main (void)
 // 				}
 			}
 				
+			apbmand_data = read_apbmand(apbmand);
 
 				
 			
-			if(cycles % 3 == 0)
+			/*
+			IMU Data:
+				- Raw acceleration
+				- Raw gyroscope
+				- Raw magnetometer
+				- Linear (no gravity vector) acceleration
+				- Gravity vector
+				- Quaternion
+					
+			Pressure sensor:
+				- Pressure
+					
+			Calculated values:
+				- Airspeed
+				- World acceleration
+				- World velocity
+				- World position
+			*/
+			struct bno055_linear_accel_t bno055_linear_accel;
+			bno055_read_linear_accel_xyz(&bno055_linear_accel);
+			
+			uint32_t accel_mag = bno055_linear_accel.x * bno055_linear_accel.x + bno055_linear_accel.y * bno055_linear_accel.y + bno055_linear_accel.z * bno055_linear_accel.z;
+			if (accel_mag > 10000 * 20)
 			{
-				/*
-				IMU Data:
-					- Raw acceleration
-					- Raw gyroscope
-					- Raw magnetometer
-					- Linear (no gravity vector) acceleration
-					- Gravity vector
-					- Quaternion
-					
-				Pressure sensor:
-					- Pressure
-					
-				Calculated values:
-					- Airspeed
-					- World acceleration
-					- World velocity
-					- World position
-				*/
-				struct bno055_linear_accel_t bno055_linear_accel;
-				bno055_read_linear_accel_xyz(&bno055_linear_accel);
-				
-				struct bno055_accel_t raw_accel;
-				bno055_read_accel_xyz(&raw_accel);
-				
-				struct bno055_gyro_t raw_gyro;
-				bno055_read_gyro_xyz(&raw_gyro);
-				
-				struct bno055_mag_t raw_mag;
-				bno055_read_mag_xyz(&raw_mag);
-				
-				acceleration.x = fix16_from_float((float)bno055_linear_accel.x / 100.0);
-				acceleration.y = fix16_from_float((float)bno055_linear_accel.y / 100.0);
-				acceleration.z = fix16_from_float((float)bno055_linear_accel.z / 100.0);
-
-				struct bno055_quaternion_t bno055_quaternion;
-				bno055_read_quaternion_wxyz(&bno055_quaternion);
-				orientation.a = fix16_from_int(bno055_quaternion.w);
-				orientation.b = fix16_from_int(bno055_quaternion.x);
-				orientation.c = fix16_from_int(bno055_quaternion.y);
-				orientation.d = fix16_from_int(bno055_quaternion.z);
-								
-				if(bno055_quaternion.w == 0 && bno055_quaternion.x == 0 && bno055_quaternion.y == 0 && bno055_quaternion.z == 0 && bno055_linear_accel.x == 0 && bno055_linear_accel.y == 0 && bno055_linear_accel.z == 0)
+				high_accel_counter++;
+				if (high_accel_counter > 10 && !has_launched)
 				{
-					int8_t initStatus = bno055_init(&bno055);
-					printf("Init Status: %i  (0 is good)\n", initStatus);
-					bno055_set_power_mode(BNO055_POWER_MODE_NORMAL);
-					//bno055_set_clk_src(0x01);
-					int8_t status = bno055_set_operation_mode(BNO055_OPERATION_MODE_NDOF);
-					uint8_t operation_mode = 0;
-					bno055_get_operation_mode(&operation_mode);
-					printf("Operation mode is %u, should be %u\nWrite status: %i  (0 is good)\n",operation_mode,BNO055_OPERATION_MODE_NDOF,status);
-					
-					printf("IMU Initialized\n");
-					delay_ms(500);
+					velocity.x = F16(0); velocity.y = F16(0); velocity.z = F16(0);
+					position.x = F16(0); position.y = F16(0); position.z = F16(0);
+					has_launched = 1;
 				}
+			}
+			else
+			{
+				high_accel_counter = 0;
+			}
 				
-				uint8_t accel_calib = 0;
-				uint8_t gyro_calib = 0;
-				uint8_t mag_calib = 0;
-				uint8_t sys_calib = 0;
-				bno055_get_accel_calib_stat(&accel_calib);
-				bno055_get_gyro_calib_stat(&gyro_calib);
-				bno055_get_mag_calib_stat(&mag_calib);
-				bno055_get_sys_calib_stat(&sys_calib);
+			struct bno055_accel_t raw_accel;
+			bno055_read_accel_xyz(&raw_accel);
+				
+			struct bno055_gyro_t raw_gyro;
+			bno055_read_gyro_xyz(&raw_gyro);
+				
+			struct bno055_mag_t raw_mag;
+			bno055_read_mag_xyz(&raw_mag);
+				
+			acceleration.x = fix16_from_float((float)bno055_linear_accel.x / 100.0);
+			acceleration.y = fix16_from_float((float)bno055_linear_accel.y / 100.0);
+			acceleration.z = fix16_from_float((float)bno055_linear_accel.z / 100.0);
+
+			struct bno055_quaternion_t bno055_quaternion;
+			bno055_read_quaternion_wxyz(&bno055_quaternion);
+			orientation.a = fix16_from_int(bno055_quaternion.w);
+			orientation.b = fix16_from_int(bno055_quaternion.x);
+			orientation.c = fix16_from_int(bno055_quaternion.y);
+			orientation.d = fix16_from_int(bno055_quaternion.z);
+								
+			if(bno055_quaternion.w == 0 && bno055_quaternion.x == 0 && bno055_quaternion.y == 0 && bno055_quaternion.z == 0 && bno055_linear_accel.x == 0 && bno055_linear_accel.y == 0 && bno055_linear_accel.z == 0)
+			{
+				int8_t initStatus = bno055_init(&bno055);
+				printf("Init Status: %i  (0 is good)\n", initStatus);
+				bno055_set_power_mode(BNO055_POWER_MODE_NORMAL);
+				//bno055_set_clk_src(0x01);
+				int8_t status = bno055_set_operation_mode(BNO055_OPERATION_MODE_NDOF);
+				uint8_t operation_mode = 0;
+				bno055_get_operation_mode(&operation_mode);
+				printf("Operation mode is %u, should be %u\nWrite status: %i  (0 is good)\n",operation_mode,BNO055_OPERATION_MODE_NDOF,status);
+					
+				printf("IMU Initialized\n");
+				delay_ms(500);
+			}
+				
+			uint8_t accel_calib = 0;
+			uint8_t gyro_calib = 0;
+			uint8_t mag_calib = 0;
+			uint8_t sys_calib = 0;
+			bno055_get_accel_calib_stat(&accel_calib);
+			bno055_get_gyro_calib_stat(&gyro_calib);
+			bno055_get_mag_calib_stat(&mag_calib);
+			bno055_get_sys_calib_stat(&sys_calib);
 				
 // 				if (accel_calib > 1 && gyro_calib > 1 && mag_calib > 1 && sys_calib > 1)
 // 				{
-				qf16_normalize(&orientation, &orientation);
-				qf16_conj(&orientation, &orientation); //Inverts quaternion (inverse of unit quaternion is the conjugate)
+			qf16_normalize(&orientation, &orientation);
+			qf16_conj(&orientation, &orientation); //Inverts quaternion (inverse of unit quaternion is the conjugate)
 
-				v3d globalaccel;
-				qf16_rotate(&globalaccel, &orientation, &acceleration);
-				uint32_t this_time = time_ms;
-				if (last_time != 0)
-				{
-					v3d dv, dp, tmp;
-					v3d_mul_s(&dv, &globalaccel, fix16_from_float((float)(this_time - last_time) / 1000.0));
-					v3d_add(&velocity, &velocity, &dv);
-					v3d_mul_s(&dp, &velocity, fix16_from_float((float)(this_time - last_time) / 1000.0));
-					v3d_add(&position, &position, &dp);
-				}
-				last_time = this_time;
-
-				v3d pos_cm;
-				v3d_mul_s(&pos_cm, &position, F16(100));
-				printf("%li, "		//Time
-						"%i, %i, %i, "		//Position
-						"%i, %i, %i, %i, "	//Quaternion
-						"%i, %i, %i, "		//Linear acceleration
-						"%i, %i, %i, "		//Raw acceleration
-						"%i, %i, %i, "		//Raw gyroscope
-						"%i, %i, %i, "		//Raw magnetometer
-						"%u, %u, %u, %u, "	//Calibration statuses
-						"MS5607: %li, %li, %li"		//Pressure, temperature, altitude
-						"\n", 
-					time_ms, 
-					fix16_to_int(pos_cm.x), fix16_to_int(pos_cm.y), fix16_to_int(pos_cm.z),
-					bno055_quaternion.w, bno055_quaternion.x, bno055_quaternion.y, bno055_quaternion.z,
-					bno055_linear_accel.x, bno055_linear_accel.y, bno055_linear_accel.z,
-					raw_accel.x, raw_accel.y, raw_accel.z,
-					raw_gyro.x, raw_gyro.y, raw_gyro.z,
-					raw_mag.x, raw_mag.y, raw_mag.z,
-					accel_calib, gyro_calib, mag_calib, sys_calib,
-					pressure, temperature, altitude
-					);
-/*				}*/
-				if (accel_calib < 1 || gyro_calib < 1 || mag_calib < 1 || sys_calib < 1)
-				{
-					PORTE.OUTTGL = 0xff;
-				}
-				else
-				{
-					PORTE.OUT = 0xf0;
-				}
-// 				else
-// 				{
-// 					printf("Calib stat: %u %u %u %u\n",accel_calib, gyro_calib, mag_calib, sys_calib);
-// 				}	
-				
-// 				printf("%lu,",cycles);
-// 				printf("%li,%lu,%lu,",pressure,temperature);
-// 				//printf("%.3f,%.3f,%.3f,%.3f,",yaw_to_heading(imu_data.yaw),imu_data.yaw,imu_data.roll,imu_data.pitch);
-// 				//printf("%.3f,%i,",yawAngle,pitchAngle);
-// 				printf("%.5f,%.5f,",GPSdata.latdecimal,GPSdata.londecimal);
+			v3d globalaccel;
+			qf16_rotate(&globalaccel, &orientation, &acceleration);
+			uint32_t this_time = time_ms;
+			if (last_time != 0)
+			{
+				v3d dv, dp, tmp;
+				v3d_mul_s(&dv, &globalaccel, fix16_from_float((float)(this_time - last_time) / 1000.0));
+				v3d_add(&velocity, &velocity, &dv);
+				v3d_mul_s(&dp, &velocity, fix16_from_float((float)(this_time - last_time) / 1000.0));
+				v3d_add(&position, &position, &dp);
 			}
+			last_time = this_time;
+
+			v3d pos_cm;
+			v3d_mul_s(&pos_cm, &position, F16(100));
+			printf("%li, "		//Time
+					"%i, %i, %i, "		//Position
+					"%i, %i, %i, %i, "	//Quaternion
+					"%i, %i, %i, "		//Linear acceleration
+					"%i, %i, %i, "		//Raw acceleration
+					"%i, %i, %i, "		//Raw gyroscope
+					"%i, %i, %i, "		//Raw magnetometer
+					"%u, %u, %u, %u, "	//Calibration statuses
+					"MS5607: %li, %li, %li, "		//Pressure, temperature, altitude
+					"%i, %li"						//Airspeed, dynamic pressure
+					"%lu, %f, %f, %f"			//GPS time, latitude, longitude, GPS height
+					"\n", 
+				time_ms, 
+				fix16_to_int(pos_cm.x), fix16_to_int(pos_cm.y), fix16_to_int(pos_cm.z),
+				bno055_quaternion.w, bno055_quaternion.x, bno055_quaternion.y, bno055_quaternion.z,
+				bno055_linear_accel.x, bno055_linear_accel.y, bno055_linear_accel.z,
+				raw_accel.x, raw_accel.y, raw_accel.z,
+				raw_gyro.x, raw_gyro.y, raw_gyro.z,
+				raw_mag.x, raw_mag.y, raw_mag.z,
+				accel_calib, gyro_calib, mag_calib, sys_calib,
+				pressure, temperature, altitude,
+				(int16_t)(apbmand_data.airspeed * 100), (int32_t)apbmand_data.pressure,
+				hrms_to_sec(GPSdata.hour, GPSdata.minutes, GPSdata.seconds), GPSdata.latdecimal, GPSdata.londecimal, GPSdata.altitude
+				);
+/*				}*/
+			if ((accel_calib < 1 || gyro_calib < 1 || mag_calib < 1 || sys_calib < 1) && time_ms - last_toggle_time > 100)
+			{
+				PORTE.OUTTGL = 0xff;
+				last_toggle_time = time_ms;
+			}
+			else
+			{
+				PORTE.OUT = 0xf0;
+			}
+
+// 			printf("%lu,",cycles);
+// 			printf("%li,%lu,%lu,",pressure,temperature);
+			//printf("%.3f,%.3f,%.3f,%.3f,",yaw_to_heading(imu_data.yaw),imu_data.yaw,imu_data.roll,imu_data.pitch);
+			//printf("%.3f,%i,",yawAngle,pitchAngle);
+			//printf("%f,%f\n",GPSdata.latdecimal, GPSdata.londecimal);
 			
 			
 			//HEADING IS (imu_data.yaw+180.0)
@@ -633,7 +666,7 @@ int main (void)
 
 			//printf("\nImu Data: %.3f %.3f %.3f",(imu_data.yaw + 180.0), imu_data.pitch, imu_data.roll);
 
-			delay_ms(10);
+			//delay_ms(10);
 		}
 		if (last_finished != SENTENCE_NONE)
 		{

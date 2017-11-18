@@ -71,16 +71,6 @@ void board_init(void)
 	ioport_configure_pin(GPIO_PUSH_BUTTON_6, IOPORT_DIR_INPUT | IOPORT_PULL_UP);
 	ioport_configure_pin(GPIO_PUSH_BUTTON_7, IOPORT_DIR_INPUT | IOPORT_PULL_UP);
 
-#ifdef CONF_BOARD_AT45DBX
-#warning Check that the DataFlash AT45DB is mounted on your board
-	ioport_configure_pin(AT45DBX_MASTER_SCK, IOPORT_DIR_OUTPUT |
-			IOPORT_INIT_HIGH);
-	ioport_configure_pin(AT45DBX_MASTER_MOSI, IOPORT_DIR_OUTPUT |
-			IOPORT_INIT_HIGH);
-	ioport_configure_pin(AT45DBX_MASTER_MISO, IOPORT_DIR_INPUT);
-	ioport_configure_pin(AT45DBX_CS, IOPORT_DIR_OUTPUT | IOPORT_INIT_HIGH);
-#endif
-
 #ifdef CONF_BOARD_ENABLE_MXT143E_XPLAINED
 	ioport_configure_pin(MXT143E_XPLAINED_SCK, IOPORT_DIR_OUTPUT
 			| IOPORT_INIT_HIGH);

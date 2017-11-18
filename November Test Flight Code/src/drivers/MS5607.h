@@ -11,6 +11,11 @@
 #include <asf.h>
 #include "SPI.h"
 
+#define MS_SENS_STATE_ASKING_PRESS	1
+#define MS_SENS_STATE_ASKING_TEMP	2
+#define MS_SENS_STATE_READY			3
+#define MS_SENS_LENGTH_VALUE_READ	10 //ms
+
 typedef struct MS5607
 {
 	ioport_pin_t select_pin;
@@ -20,6 +25,7 @@ typedef struct MS5607
 	uint16_t TCO;
 	uint16_t Tref;
 	uint16_t TEMPSENS;
+	uint8_t STATE;
 } MS5607_t;
 
 void calibratePressureSensor(MS5607_t* sensor);

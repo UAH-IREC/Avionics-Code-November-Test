@@ -1,0 +1,12 @@
+Cycles,State,Altitude,Heading,Yaw,Pitch,Roll,ServoEnable,CommandedYaw,CommandedPitch,CurrentLat,CurrentLon,TargetHeading
+Init Status: -8  (0 is good)
+Operation mode is 0, should be 12
+Write status: -1  (0 is good)
+IMU Initialized
+6232, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, MS5607: 97940, 2721, 0, 578, 20922024, 0.000000, 0.000000, 159195320000000000000000000000000000000.000000
+Init Status: 0  (0 is good)
+Operation mode is 0, should be 12
+Write status: 0  (0 is good)
+IMU Initialized
+7401, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, MS5607: 97940, 2721, 0, 578, 20922024, 0.000000, 0.000000, 159195320000000000000000000000000000000.000000
+Init Status: 0  (0 is good)

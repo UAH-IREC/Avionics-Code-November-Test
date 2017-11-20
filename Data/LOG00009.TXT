@@ -1,0 +1,6 @@
+Cycles,State,Altitude,Heading,Yaw,Pitch,Roll,ServoEnable,CommandedYaw,CommandedPitch,CurrentLat,CurrentLon,TargetHeading
+Init Status: 0  (0 is good)
+Operation mode is 12, should be 12
+Write status: 0  (0 is good)
+IMU Initialized
+4350, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0

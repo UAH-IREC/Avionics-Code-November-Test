@@ -1,0 +1,9 @@
+Operation mode is 6, should be 12
+Write status: 0  (0 is good)
+IMU Initialized
+7Differential Pressure Sensor Initialized
+MS5607 Initialized
+
+Initialization Complete!
+
+

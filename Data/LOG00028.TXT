@@ -1,0 +1,2 @@
+Cycles,State,Altitude,Heading,Yaw,Pitch,Roll,ServoEnable,CommandedYaw,CommandedPitch,CurrentLat,CurrentLon,TargetHeading
+Init Status: 0  (0 is good)
